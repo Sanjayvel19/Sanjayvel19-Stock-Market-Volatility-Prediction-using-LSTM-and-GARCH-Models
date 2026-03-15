@@ -13,27 +13,22 @@ MODEL_PATH = os.path.join(BASE_DIR, "saved_models")
 
 def load_models():
     """Load saved model results with pandas version compatibility patch."""
-    import pickle, io
-
-    class CompatUnpickler(pickle.Unpickler):
-        """Patch pandas StringDtype constructor incompatibility between versions."""
-        def find_class(self, module, name):
-            if module == "pandas.core.arrays.string_" and name == "StringDtype":
-                import pandas as pd
-                # Return a callable that ignores extra args
-                class _StrDtype:
-                    def __new__(cls, *a, **kw):
-                        return pd.StringDtype()
-                return _StrDtype
-            return super().find_class(module, name)
-
-    def compat_load(path):
-        with open(path, "rb") as f:
-            return CompatUnpickler(f).load()
+    # Monkey-patch StringDtype to accept extra constructor args from older pickles
+    try:
+        from pandas.core.arrays.string_ import StringDtype as _SD
+        _orig_init = _SD.__init__
+        def _patched_init(self, *args, **kwargs):
+            try:
+                _orig_init(self)
+            except Exception:
+                pass
+        _SD.__init__ = _patched_init
+    except Exception:
+        pass
 
     try:
-        lstm  = compat_load(os.path.join(MODEL_PATH, "lstm_results.pkl"))
-        garch = compat_load(os.path.join(MODEL_PATH, "garch_results.pkl"))
+        lstm  = joblib.load(os.path.join(MODEL_PATH, "lstm_results.pkl"))
+        garch = joblib.load(os.path.join(MODEL_PATH, "garch_results.pkl"))
         if not isinstance(lstm, pd.DataFrame):
             lstm = pd.DataFrame(lstm)
         lstm.columns = [c.strip() for c in lstm.columns]
