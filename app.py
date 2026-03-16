@@ -110,17 +110,19 @@ def get_dashboard_data():
 
         target_price = curr_price * (1 + exp_ret)
 
-        # -------- GARCH VOL CALCULATION -------- #
+        # -------- GARCH VOLATILITY -------- #
 
-        garch_raw = garch_variances.get(ticker, [0.0001])
+        garch_raw = garch_variances.get(ticker)
 
-        vol_path = np.sqrt(np.maximum(np.array(garch_raw).flatten(), 1e-8)) * 100
-        vol_path = vol_path.tolist()
+        if garch_raw is None or len(garch_raw) == 0:
+            vol_path = [1.5]
+        else:
+            vol_path = np.sqrt(np.maximum(np.array(garch_raw).flatten(), 1e-8)) * 100
+            vol_path = vol_path.tolist()
 
         current_vol = round(vol_path[-1], 3)
 
-        if current_vol > 15:
-            current_vol = 15
+        current_vol = max(0.3, min(current_vol, 12))
 
         display_history = vol_path[-63:] if len(vol_path) > 1 else [current_vol] * 30
 
@@ -163,13 +165,12 @@ def get_dashboard_data():
 
     alphas = [r["Alpha"] for r in raw_rankings]
 
-    a_min = min(alphas)
-    a_max = max(alphas)
+    a_min = np.min(alphas)
+    a_max = np.max(alphas)
 
-    a_range = a_max - a_min if a_max != a_min else 1
+    a_range = max(a_max - a_min, 1e-6)
 
     for item in raw_rankings:
-
         item["Score"] = round(((item["Alpha"] - a_min) / a_range) * 100, 1)
 
     raw_rankings.sort(key=lambda x: x["Score"], reverse=True)
@@ -179,7 +180,7 @@ def get_dashboard_data():
 
     target = next((i for i in raw_rankings if i["Stock"] == selected_stock), raw_rankings[0])
 
-    # -------- OHLC PRICE GENERATION -------- #
+    # -------- OHLC SIMULATION -------- #
 
     seed = int(abs(hash(target["Stock"])) % 99999)
 
@@ -188,7 +189,7 @@ def get_dashboard_data():
     current_price = target["Price"]
     predicted_price = target["Predicted"]
 
-    daily_vol = max(target["Vol"] / 100, 0.005)
+    daily_vol = np.clip(target["Vol"] / 100, 0.003, 0.08)
 
     DAYS = 30
 
@@ -254,7 +255,6 @@ def get_dashboard_data():
         "predicted_candle": predicted_candle,
 
         "market_stats": {
-
             "avg_ret": round(float(np.mean([r["Ret"] for r in raw_rankings])), 2),
             "avg_vol": round(float(np.mean([r["Vol"] for r in raw_rankings])), 2),
             "total": len(raw_rankings),
