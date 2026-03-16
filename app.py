@@ -39,13 +39,12 @@ def compute_alpha_score(exp_ret, current_vol, current_price, predicted_price):
 
     rf_daily = 0.07 / 252
 
-    # Return vs risk
     excess_return = exp_ret - rf_daily
     vol_decimal = max(current_vol / 100, 1e-4)
+
     sharpe_raw = excess_return / vol_decimal
     sharpe_score = np.tanh(sharpe_raw * 0.5)
 
-    # Momentum
     if predicted_price > 0 and current_price > 0:
         log_ret = np.log(predicted_price / current_price)
     else:
@@ -53,7 +52,6 @@ def compute_alpha_score(exp_ret, current_vol, current_price, predicted_price):
 
     momentum_score = np.tanh(log_ret * 30)
 
-    # Volatility penalty
     if current_vol <= 1.5:
         vol_score = 1
     elif current_vol >= 4:
@@ -61,7 +59,6 @@ def compute_alpha_score(exp_ret, current_vol, current_price, predicted_price):
     else:
         vol_score = 1 - ((current_vol - 1.5) / (4 - 1.5))
 
-    # Confidence band
     abs_ret = abs(exp_ret)
 
     if abs_ret < 0.005:
@@ -86,7 +83,9 @@ def compute_alpha_score(exp_ret, current_vol, current_price, predicted_price):
 
 @app.route("/")
 def index():
+
     stocks = sorted(lstm_data["Stock"].unique().tolist()) if not lstm_data.empty else []
+
     return render_template("index.html", stocks=stocks)
 
 
@@ -96,6 +95,7 @@ def index():
 def get_dashboard_data():
 
     selected_stock = request.args.get('stock')
+
     rf_daily = 0.07 / 252
 
     raw_rankings = []
@@ -110,27 +110,31 @@ def get_dashboard_data():
 
         target_price = curr_price * (1 + exp_ret)
 
-        # -------- FIXED GARCH VOL CALCULATION -------- #
+        # -------- GARCH VOL CALCULATION -------- #
 
         garch_raw = garch_variances.get(ticker, [0.0001])
 
         vol_path = np.sqrt(np.maximum(np.array(garch_raw).flatten(), 1e-8)) * 100
         vol_path = vol_path.tolist()
 
-        current_vol = min(vol_path[-1], 10)
+        current_vol = round(vol_path[-1], 3)
+
+        if current_vol > 15:
+            current_vol = 15
 
         display_history = vol_path[-63:] if len(vol_path) > 1 else [current_vol] * 30
 
-        # Alpha score
+        # -------- ALPHA SCORE -------- #
+
         alpha = compute_alpha_score(exp_ret, current_vol, curr_price, pred_price)
 
-        # Sharpe ratio
         excess_return = exp_ret - rf_daily
         vol_decimal = max(current_vol / 100, 1e-4)
 
         sharpe = round(excess_return / vol_decimal, 3)
 
-        # Signal logic
+        # -------- SIGNAL -------- #
+
         if exp_ret > 0.02 and current_vol < 2.5:
             signal = "STRONG BUY"
         elif exp_ret > 0.01:
@@ -184,7 +188,7 @@ def get_dashboard_data():
     current_price = target["Price"]
     predicted_price = target["Predicted"]
 
-    daily_vol = target["Vol"] / 100
+    daily_vol = max(target["Vol"] / 100, 0.005)
 
     DAYS = 30
 
@@ -195,8 +199,6 @@ def get_dashboard_data():
         move = rng.normal(0, daily_vol)
 
         prices.insert(0, round(prices[0] / (1 + move), 2))
-
-    # Trading days
 
     trading_days = []
 
@@ -231,8 +233,6 @@ def get_dashboard_data():
             "close": cl
         })
 
-    # -------- PREDICTED CANDLE -------- #
-
     next_day = datetime.now()
 
     while next_day.weekday() >= 5:
@@ -249,21 +249,15 @@ def get_dashboard_data():
     return jsonify({
 
         "rankings": raw_rankings,
-
         "selected": target,
-
         "ohlc": ohlc_history,
-
         "predicted_candle": predicted_candle,
 
         "market_stats": {
 
             "avg_ret": round(float(np.mean([r["Ret"] for r in raw_rankings])), 2),
-
             "avg_vol": round(float(np.mean([r["Vol"] for r in raw_rankings])), 2),
-
             "total": len(raw_rankings),
-
             "bullish": sum(1 for r in raw_rankings if r["Ret"] > 0)
         }
     })
