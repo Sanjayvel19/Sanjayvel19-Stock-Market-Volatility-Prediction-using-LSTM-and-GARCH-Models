@@ -206,7 +206,7 @@ def get_dashboard_data():
 
         # GARCH volatility
         garch_raw = garch_variances.get(ticker, [0.0001])
-        vol_path = [float(np.sqrt(max(v, 1e-8)) * 100) for v in np.array(garch_raw).flatten()]
+        vol_path = [float(np.sqrt(max(v, 1e-8))) for v in np.array(garch_raw).flatten()]
         current_vol = vol_path[-1]
         display_history = vol_path[-63:] if len(vol_path) > 1 else [current_vol] * 30
 
@@ -261,7 +261,7 @@ def get_dashboard_data():
     predicted_price = target["Predicted"]
     # Vol is stored as sqrt(variance)*100 in %-point units;
     # divide by 10000 to get true decimal daily vol (e.g. 1.286% -> 0.01286)
-    daily_vol = target["Vol"] / 10000
+    daily_vol = target["Vol"] / 100  # Vol is now in %, divide by 100 for decimal
 
     DAYS = 30
     prices = [current_price]
